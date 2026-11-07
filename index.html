@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Machine - an 8-bit computer whose CPU is a language model</title>
+<meta name="description" content="Model Machine is an 8-bit computer with no CPU. A Pollinations language model reads the registers, the ROM and the memory and returns the next machine state, one instruction at a time. A reference core runs beside it to measure how faithfully the model behaves as hardware. You pay with your own Pollen.">
+<style>
+  :root{
+    --void:#0d100e; --panel:#141a15; --panel2:#182019; --rule:#26302a;
+    --ink:#d6ded4; --dim:#8b9a8c; --faint:#5f6f62;
+    --phosphor:#a6f08a; --amber:#f0b35e; --alarm:#e2705f; --cool:#7fc8d8;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--void);color:var(--ink);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  a{color:var(--phosphor)}
+  .micro{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+
+  header{border-bottom:1px solid var(--rule);padding:20px 0 16px}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
+  h1{font-size:23px;margin:0;letter-spacing:.02em;font-weight:600;color:#eef4ea}
+  h1 span{color:var(--phosphor)}
+  .tag{color:var(--dim);margin:6px 0 0;max-width:66ch;font-size:13px;line-height:1.6}
+  .authbox{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .who{font-size:11.5px;color:var(--dim);max-width:170px;text-align:right}
+  button{font-family:inherit;font-size:12.5px;cursor:pointer;border-radius:2px;letter-spacing:.03em}
+  .btn{background:var(--phosphor);color:#0b120c;border:1px solid var(--phosphor);padding:9px 16px;font-weight:600}
+  .btn:hover{background:#bdf7a4}
+  .btn[disabled]{opacity:.4;cursor:not-allowed}
+  .btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--rule);padding:8px 12px}
+  .btn-ghost:hover{border-color:var(--dim);color:#fff}
+  .btn-ghost[disabled]{opacity:.35;cursor:not-allowed}
+
+  main{padding:22px 0 50px}
+  .deck{display:grid;grid-template-columns:1.08fr .92fr;gap:16px;align-items:start}
+  @media (max-width:900px){.deck{grid-template-columns:1fr}}
+
+  .card{background:var(--panel);border:1px solid var(--rule);border-radius:3px}
+  .card-h{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 12px;border-bottom:1px solid var(--rule)}
+  .card-b{padding:12px}
+
+  /* CRT */
+  .crt{background:#070a08;border:1px solid #1d2720;border-radius:2px;padding:14px 12px;position:relative;overflow:hidden}
+  .crt::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(180deg,rgba(255,255,255,.028) 0 1px,transparent 1px 3px);
+  }
+  .screen{font-size:13.5px;line-height:1.62;color:var(--phosphor);white-space:pre;overflow:hidden;min-height:180px;
+    text-shadow:0 0 6px rgba(140,240,120,.28)}
+  .screen .cursor{background:var(--phosphor);color:#070a08;text-shadow:none}
+  .screen .idle{color:#3f5142}
+  .vitals{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid #1b241d;font-size:11px;color:var(--dim)}
+  .vitals b{color:var(--ink);font-weight:600}
+  .vitals .ok{color:var(--phosphor)}
+  .vitals .bad{color:var(--alarm)}
+
+  /* registers */
+  .regs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .reg{border:1px solid var(--rule);background:var(--panel2);border-radius:2px;padding:8px 9px}
+  .reg .k{font-size:9.5px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+  .reg .v{font-size:19px;color:#eaf3e6;margin-top:2px;font-variant-numeric:tabular-nums}
+  .reg .v small{font-size:10.5px;color:var(--dim);margin-left:4px}
+  .reg.flash{border-color:var(--phosphor)}
+  .reg.flash .v{color:var(--phosphor)}
+
+  .mem{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:10px}
+  .cell{border:1px solid #212b24;background:#10160f;border-radius:2px;padding:4px 3px;text-align:center;cursor:pointer}
+  .cell:hover{border-color:var(--dim)}
+  .cell .ad{font-size:8.5px;color:var(--faint);display:block;letter-spacing:.06em}
+  .cell .by{font-size:12px;color:var(--ink)}
+  .cell.written .by{color:var(--phosphor)}
+  .cell.sel{border-color:var(--amber)}
+
+  .fid{margin-top:12px;display:flex;align-items:center;gap:10px}
+  .fid .track{flex:1;height:5px;background:#1b241d;border-radius:3px;overflow:hidden}
+  .fid .track i{display:block;height:100%;width:0;background:var(--phosphor);transition:width .25s}
+  .fid .n{font-size:11px;color:var(--dim);min-width:96px;text-align:right}
+
+  /* controls */
+  .controls{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-top:12px}
+  select,textarea,input[type=text],input[type=password],input[type=number]{
+    font-family:inherit;font-size:12px;background:#0e140f;color:var(--ink);
+    border:1px solid var(--rule);border-radius:2px;padding:7px 8px}
+  select:focus,textarea:focus,input:focus{outline:1px solid #33513a;border-color:#3d5c44}
+  .speed{width:58px}
+
+  /* rom */
+  .rom{margin-top:16px}
+  .listing{font-size:12.5px;line-height:1.75;white-space:pre;color:var(--dim);overflow-x:auto}
+  .listing .pc{color:#0b120c;background:var(--phosphor);border-radius:2px}
+  .listing .done{color:#4d6a52}
+  textarea.romedit{width:100%;min-height:150px;line-height:1.7;font-size:12.5px;resize:vertical}
+
+  /* trace */
+  .trace{max-height:230px;overflow:auto;font-size:12px}
+  .row{display:grid;grid-template-columns:34px 1fr;gap:9px;padding:4px 0;border-bottom:1px dotted #1e2822}
+  .row:last-child{border-bottom:0}
+  .row .ix{color:var(--faint);font-size:10.5px;padding-top:2px}
+  .row .op{color:#e6efe1}
+  .row .note{color:var(--dim);font-size:11.5px}
+  .row.drift .op{color:var(--amber)}
+  .row.drift .note{color:#b98f56}
+  .row.err .op{color:var(--alarm)}
+  .empty{color:var(--faint);font-size:12px;padding:6px 0}
+
+  .status{min-height:18px;font-size:12px;color:var(--dim);margin-top:10px}
+  .status.err{color:var(--alarm)}
+  .status.ok{color:var(--phosphor)}
+
+  .notes{margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:760px){.notes{grid-template-columns:1fr}}
+  .notes h2{font-size:12px;margin:0 0 6px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  .notes p{margin:0 0 8px;color:var(--dim);font-size:12.5px;line-height:1.65}
+  .notes p b{color:var(--ink);font-weight:600}
+  footer{border-top:1px solid var(--rule);padding:16px 0 40px;color:var(--faint);font-size:11.5px}
+  .foot{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap top">
+    <div>
+      <h1>Model <span>Machine</span></h1>
+      <p class="tag">An 8-bit computer with no CPU. A language model reads the registers, the ROM and the memory, then returns the next machine state, one instruction at a time. A reference core runs beside it, so you can see how faithfully a model behaves as hardware.</p>
+    </div>
+    <div class="authbox">
+      <span class="who" id="who">Not signed in</span>
+      <button class="btn-ghost" id="signBtn">Sign in with Pollen</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="deck">
+    <!-- left: the machine -->
+    <div>
+      <section class="card">
+        <div class="card-h">
+          <span class="micro">Machine</span>
+          <span class="micro" id="powerState">halted</span>
+        </div>
+        <div class="card-b">
+          <div class="crt">
+            <div class="screen" id="screen"></div>
+            <div class="vitals">
+              <span>clock <b id="clock">0</b></span>
+              <span>model <b id="modelUsed">-</b></span>
+              <span>cost <b id="cost">0 tok</b></span>
+              <span id="coreState" class="ok">core idle</span>
+            </div>
+          </div>
+
+          <div class="controls">
+            <button class="btn" id="stepBtn">Step</button>
+            <button class="btn-ghost" id="runBtn">Run 8</button>
+            <button class="btn-ghost" id="resetBtn">Reset</button>
+            <select id="modelSel" title="Which model is the CPU"></select>
+            <select id="romSel" title="Program in ROM"></select>
+            <button class="btn-ghost" id="editBtn">Edit ROM</button>
+          </div>
+          <div class="status" id="status"></div>
+        </div>
+      </section>
+
+      <section class="card rom">
+        <div class="card-h">
+          <span class="micro">ROM</span>
+          <span class="micro" id="romNote">read only</span>
+        </div>
+        <div class="card-b">
+          <div class="listing" id="listing"></div>
+          <div id="romEditWrap" style="display:none;margin-top:10px">
+            <textarea class="romedit" id="romEdit" spellcheck="false" aria-label="ROM listing"></textarea>
+            <div class="controls">
+              <button class="btn-ghost" id="applyRom">Assemble and reset</button>
+              <button class="btn-ghost" id="cancelRom">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- right: state -->
+    <div>
+      <section class="card">
+        <div class="card-h">
+          <span class="micro">Registers</span>
+          <span class="micro">8 bit</span>
+        </div>
+        <div class="card-b">
+          <div class="regs">
+            <div class="reg" id="rPC"><div class="k">PC</div><div class="v">0</div></div>
+            <div class="reg" id="rA"><div class="k">A</div><div class="v">0<small>00</small></div></div>
+            <div class="reg" id="rX"><div class="k">X</div><div class="v">0<small>00</small></div></div>
+            <div class="reg" id="rZ"><div class="k">Z flag</div><div class="v">1</div></div>
+          </div>
+
+          <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:baseline">
+            <span class="micro">Memory 200-20F</span>
+            <span class="micro" id="memHint">click a cell to poke</span>
+          </div>
+          <div class="mem" id="mem"></div>
+
+          <div class="fid">
+            <span class="micro">Core agreement</span>
+            <span class="track"><i id="fidFill"></i></span>
+            <span class="n" id="fidNum">no steps yet</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top:16px">
+        <div class="card-h">
+          <span class="micro">Trace</span>
+          <span class="micro" id="traceCount">0 retired</span>
+        </div>
+        <div class="card-b">
+          <div class="trace" id="trace"><div class="empty">Press Step. Each step is one model call, and the model is doing the arithmetic.</div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div>
+      <h2>What you are looking at</h2>
+      <p><b>There is no CPU in this machine.</b> The registers, the 16 bytes of memory and the ROM listing are real numbers held by this page. The transition from one of those states to the next is written by a language model on Pollinations, one instruction per call.</p>
+      <p><b>The reference core</b> is forty lines of ordinary JavaScript that executes the same instruction set exactly. It runs the same program in parallel and never touches the model. The agreement bar is the fraction of steps where the model's registers matched the core's.</p>
+      <p>Models are good at this for a few instructions and then they drift: a flag goes stale, a branch is taken the wrong way, a register is quietly reset. Watching that happen is the point.</p>
+    </div>
+    <div>
+      <h2>Instruction set</h2>
+      <p><code>LDA #n</code> / <code>LDX #n</code> load a literal. <code>LDA 200</code> loads a byte from memory. <code>STA 200</code> stores A. <code>ADD #n</code>, <code>SUB #n</code>, <code>INC</code>, <code>DEC</code> work on A and set Z when the result is zero. <code>INX</code> / <code>DEX</code> step X. <code>CPX #n</code> sets Z when X equals n. <code>BNE 003</code> / <code>BEQ 003</code> / <code>JMP 003</code> jump to the line labelled 003. <code>OUT</code> prints A. <code>HLT</code> stops.</p>
+      <p>Every step, the page sends the model a state and the ROM, and asks for one JSON object back. Prose, a code fence, a number out of range or a missing key is a failed step, and the page says so instead of hiding it.</p>
+      <p>The page keeps your key in this tab, sends it to <b>gen.pollinations.ai</b> and nowhere else, and every model call is billed to your own Pollen.</p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>Model Machine. <a href="https://pollinations.ai/?ref=badge" target="_blank" rel="noopener">Made with pollinations.ai</a></span>
+    <span class="micro">Quest #19179</span>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
