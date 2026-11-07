@@ -661,12 +661,23 @@
     sel.value = S.romName;
   }
 
+  // Wire a control only when it is actually in the page, so one missing element
+  // cannot silently take out every handler after it.
+  function on(sel, event, fn) {
+    var el = $(sel);
+    if (!el) {
+      if (window.console && console.warn) console.warn("Model Machine: no element for " + sel);
+      return;
+    }
+    el.addEventListener(event, fn);
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     buildModels();
     buildRoms();
     resetMachine();
 
-    $("#signBtn").addEventListener("click", function () {
+    on("#signBtn", "click", function () {
       if (S.token) {
         sessionStorage.removeItem(tokenKey);
         S.token = null;
@@ -676,11 +687,11 @@
       }
       signIn();
     });
-    $("#stepBtn").addEventListener("click", function () { step(); });
-    $("#runBtn").addEventListener("click", function () { runN(8); });
-    $("#resetBtn").addEventListener("click", function () { resetMachine(); });
+    on("#stepBtn", "click", function () { step(); });
+    on("#runBtn", "click", function () { runN(8); });
+    on("#resetBtn", "click", function () { resetMachine(); });
 
-    $("#keyBtn").addEventListener("click", function () {
+    on("#keyBtn", "click", function () {
       var v = $("#keyInput").value.trim();
       if (!v) { setStatus("Paste a Pollinations key first.", true); return; }
       if (v.indexOf("sk_") !== 0 && v.indexOf("plln_sk") !== 0) {
@@ -694,12 +705,12 @@
       setStatus("Key loaded for this tab. Your own Pollen pays for the instructions.", false);
     });
 
-    $("#modelSel").addEventListener("change", function () {
+    on("#modelSel", "change", function () {
       S.model = this.value;
       setStatus("CPU is now " + this.options[this.selectedIndex].textContent + ". Reset for a clean run.", false);
     });
 
-    $("#romSel").addEventListener("change", function () {
+    on("#romSel", "change", function () {
       var name = this.value;
       var found = null;
       ROMS.forEach(function (r) { if (r.name === name) found = r; });
@@ -710,7 +721,7 @@
       setStatus("Loaded ROM: " + found.name, false);
     });
 
-    $("#editBtn").addEventListener("click", function () {
+    on("#editBtn", "click", function () {
       var wrap = $("#romEditWrap");
       var open = wrap.style.display !== "none";
       wrap.style.display = open ? "none" : "block";
@@ -722,7 +733,7 @@
       }
     });
 
-    $("#applyRom").addEventListener("click", function () {
+    on("#applyRom", "click", function () {
       var res = C.assemble($("#romEdit").value);
       if (res.error) { setStatus(res.error, true); return; }
       S.rom = res.lines;
@@ -732,7 +743,7 @@
       setStatus("Assembled " + res.lines.length + " instructions. Reset done.", false);
     });
 
-    $("#cancelRom").addEventListener("click", function () {
+    on("#cancelRom", "click", function () {
       $("#romEditWrap").style.display = "none";
     });
 
