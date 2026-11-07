@@ -293,7 +293,7 @@
     return out;
   }
 
-  function askMachine(machine) {
+  function askMachine(machine, maxTokens) {
     var prog = C.makeProgram(S.rom);
     var ins = machine.halted ? "HLT (the machine is halted)" : (C.text(prog[machine.pc]) || "past the end of ROM");
     var payload = {
@@ -310,7 +310,7 @@
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: "Machine state and ROM:\n" + JSON.stringify(payload, null, 1) + "\n\nReturn the new state after this one instruction." }
       ],
-      max_tokens: 900,
+      max_tokens: maxTokens || 1200,
       reasoning_effort: "low"
     };
     var ctrl = new AbortController();
@@ -357,6 +357,34 @@
 
   /* -------------------------------------------------------------------- step */
 
+  function applyStep(next, before, coreResult, insText) {
+    var match = C.sameAsCore(next, coreResult.state);
+    S.agree += match ? 1 : 0;
+    S.steps += 1;
+    S.machine = next;
+    S.core = coreResult.state;
+
+    S.trace.unshift({
+      n: S.steps,
+      op: insText,
+      note: next.note || "(no note)",
+      drift: !match
+    });
+    if (next.out.length > before.out.length) {
+      next.out.slice(before.out.length).forEach(function (v) { S.screen.push(v); });
+      if (S.screen.length > 40) S.screen = S.screen.slice(-40);
+    }
+    if (next.halted && !before.halted) {
+      setStatus("HLT reached after " + S.steps + " model steps. The machine stopped itself.", false);
+    } else if (match) {
+      setStatus("", false);
+    } else {
+      setStatus("This step differs from the reference core. The machine now follows the model.", true);
+    }
+    render();
+    return true;
+  }
+
   function step() {
     if (S.busy) return Promise.resolve(false);
     if (!S.token) {
@@ -379,32 +407,19 @@
     return askMachine(before).then(function (res) {
       S.tokens += res.tokens;
       S.lastModel = S.model;
-      var next = sanitize(JSON.parse(stripJson(res.text)), before);
-      var match = C.sameAsCore(next, coreResult.state);
-      S.agree += match ? 1 : 0;
-      S.steps += 1;
-      S.machine = next;
-      S.core = coreResult.state;
-
-      S.trace.unshift({
-        n: S.steps,
-        op: insText,
-        note: next.note || "(no note)",
-        drift: !match
-      });
-      if (next.out.length > before.out.length) {
-        next.out.slice(before.out.length).forEach(function (v) { S.screen.push(v); });
-        if (S.screen.length > 40) S.screen = S.screen.slice(-40);
+      var parsed;
+      try {
+        parsed = JSON.parse(stripJson(res.text));
+      } catch (e) {
+        // A cut-off reply is usually the token budget, not a bad answer: one
+        // retry with room to finish, then report the failure honestly.
+        return askMachine(before, 2600).then(function (retry) {
+          S.tokens += retry.tokens;
+          var second = sanitize(JSON.parse(stripJson(retry.text)), before);
+          return applyStep(second, before, coreResult, insText);
+        });
       }
-      if (next.halted && !before.halted) {
-        setStatus("HLT reached after " + S.steps + " model steps. The machine stopped itself.", false);
-      } else if (match) {
-        setStatus("", false);
-      } else {
-        setStatus("This step differs from the reference core. The machine now follows the model.", true);
-      }
-      render();
-      return true;
+      return applyStep(sanitize(parsed, before), before, coreResult, insText);
     }).catch(function (e) {
       S.trace.unshift({
         n: S.steps + 1,
